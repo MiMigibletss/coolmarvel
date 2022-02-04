@@ -46,7 +46,7 @@
   "scripts": {
     "start": "npm-run-all -p starts:****",
     "starts:client": "react-scripts start",
-    "starts:server": "nodemon ./server1/httpServer.js",
+    "starts:server": "nodemon ./server1/main.js",
     "starts:server2": "nodemon ./server2/httpServer.js",
     "starts:server3": "nodemon ./server3/httpServer.js",
     "build": "react-scripts build",
