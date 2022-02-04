@@ -6,7 +6,7 @@ const EC = new ecdsa.ec("secp256k1");
 
 const COINBASE_AMOUNT = 50;
 
-// UTxOs(공용장부)에 들어갈 미사용 트랜잭션 아웃풋 클래스 정의
+// uTxOs(공용장부)에 들어갈 미사용 트랜잭션 아웃풋 클래스 정의
 class UnspentTxOut {
   constructor(txOutId, txOutIndex, address, amount) {
     this.txOutId = txOutId;
@@ -56,45 +56,54 @@ const getTransactionId = (transaction) => {
   return CryptoJS.SHA256(txInContent + txOutContent).toString();
 };
 
-// 트랜잭션 확인
+// 트랜잭션 확인 (초기, 블록추가될 때, 체인교체될 때, 트랜잭션 추가될 때 사용됨)
+// 트랜잭션 구조, 트랜잭션id, 트랜잭션 생성 주체의 서명,
+// 트랜잭션의 인풋코인양과 아웃풋코인양의 일치여부 확인
 const validateTransaction = (transaction, aUnspentTxOuts) => {
-  // 트랜잭션 구조 검증하고
+  // 트랜잭션 구조 검증하기
   if (!isValidTransactionStructure(transaction)) {
     return false;
   }
-  //
+  // 해당 트랜잭션에 id가 실제 id 맞는지 계산해보기
   if (getTransactionId(transaction) !== transaction.id) {
-    console.log("invalid tx id: " + transaction.id);
+    console.log("트랜잭션에 써있는 id가 짭이네요");
     return false;
   }
+
+  // 해당 트랜잭션의 트잭인풋들을 공용장부랑 비교확인해서
+  // 이상있는놈이 하나라도 있으면 false 반환하는 녀석
   const hasValidTxIns = transaction.txIns
     .map((txIn) => validateTxIn(txIn, transaction, aUnspentTxOuts))
     .reduce((a, b) => a && b, true);
 
+  // uTxOs 트랜잭션 인풋들 검사해서 하나라도 이상이 있으면
   if (!hasValidTxIns) {
-    console.log("some of the txIns are invalid in tx: " + transaction.id);
+    console.log("(검사실패) 트랜잭션의 인풋중에 이상한 인풋이 있어요");
     return false;
   }
 
+  // 총 보유 코인이 얼만지 계산하는 녀석
+  // 공용장부에서 해당 트랜잭션의 인풋과 일치하는 것들(amount코인)을 찾아서 다 더해줌
   const totalTxInValues = transaction.txIns
     .map((txIn) => getTxInAmount(txIn, aUnspentTxOuts))
     .reduce((a, b) => a + b, 0);
 
+  // 총 보내는 코인이 얼만지 계산하는 녀석(실제 보내는 코인 + 거슬러 받을 코인)
   const totalTxOutValues = transaction.txOuts
     .map((txOut) => txOut.amount)
     .reduce((a, b) => a + b, 0);
 
+  // 해당 트랜잭션 내의 (총 보유 코인)과 (실제 보낼 코인+거슬러 받을 코인)이 다르면
   if (totalTxOutValues !== totalTxInValues) {
-    console.log(
-      "totalTxOutValues !== totalTxInValues in tx: " + transaction.id
-    );
+    console.log("(검사실패) 가진 코인과 주고받을 코인의 양이 달라요");
     return false;
   }
 
   return true;
 };
 
-// 블록의 트랜잭션들 정상인지 확인해보기
+// 블록의 트랜잭션들 정상인지 확인해보기 (초기, 블록추가될 때, 체인교체될 때 사용됨)
+// (코인베이스, )
 const validateBlockTransactions = (
   aTransactions,
   aUnspentTxOuts,
@@ -178,36 +187,42 @@ const validateCoinbaseTx = (transaction, blockIndex) => {
   return true;
 };
 
+// 트랜잭션 인풋 확인 (초기, 블록추가될 때, 체인교체될 때, 트랜잭션 추가될 때 사용됨)
 const validateTxIn = (txIn, transaction, aUnspentTxOuts) => {
+  // 공용장부에서 해당 트잭인풋과 같은게 있으면 referencedUTxOut(참조된 uTxO)에 저장
   const referencedUTxOut = aUnspentTxOuts.find(
     (uTxO) =>
-      uTxO.txOutId === txIn.txOutId && uTxO.txOutIndex === txIn.txOutIndex
+      // 공용장부의 id === 해당 트잭인풋의 트잭아웃풋 id 이고
+      uTxO.txOutId === txIn.txOutId &&
+      // 공용장부의 트잭아웃풋 인덱스 === 해당 트잭인풋의 트잭아웃풋 인덱스인것을 찾아라
+      uTxO.txOutIndex === txIn.txOutIndex
   );
+  // 위와 같은게 하나도 없으면 문제
   if (referencedUTxOut == null) {
-    console.log("referenced txOut not found: " + JSON.stringify(txIn));
+    console.log("(검사실패) 참조된 uTxO가 하나도 없답니다");
     return false;
   }
+  // 참조된uTxO의 지갑주소 변수에 저장
   const address = referencedUTxOut.address;
-
+  // 참조된uTxO의 지갑주소를 키쌍으로 변환
   const key = EC.keyFromPublic(address, "hex");
+  // 서명 진퉁인지 확인
+  // 해당 키쌍이(key) 해당 트랜잭션(id)에 알맞은 서명(signature)값이면 true
   const validSignature = key.verify(transaction.id, txIn.signature);
+  // 서명이 짭이면
   if (!validSignature) {
-    console.log(
-      "invalid txIn signature: %s txId: %s address: %s",
-      txIn.signature,
-      transaction.id,
-      referencedUTxOut.address
-    );
+    console.log("(검사실패) 본인의 서명이 아닌 모양입니다");
     return false;
   }
   return true;
 };
 
+//
 const getTxInAmount = (txIn, aUnspentTxOuts) => {
   return findUnspentTxOut(txIn.txOutId, txIn.txOutIndex, aUnspentTxOuts).amount;
 };
 
-// UTxOs(공용장부)에서 특정 트랜잭션과 일치하는 UTxO 찾아서 반환
+// uTxOs(공용장부)에서 특정 트랜잭션과 일치하는 uTxO 찾아서 반환
 const findUnspentTxOut = (transactionId, index, aUnspentTxOuts) => {
   return aUnspentTxOuts.find(
     (uTxO) => uTxO.txOutId === transactionId && uTxO.txOutIndex === index
@@ -231,6 +246,7 @@ const getCoinbaseTransaction = (address, blockIndex) => {
   return t;
 };
 
+// signature(서명) 만들기
 const signTxIn = (transaction, txInIndex, privateKey, aUnspentTxOuts) => {
   const txIn = transaction.txIns[txInIndex];
 
@@ -249,7 +265,7 @@ const signTxIn = (transaction, txInIndex, privateKey, aUnspentTxOuts) => {
   if (getPublicKey(privateKey) !== referencedAddress) {
     console.log(
       "trying to sign an input with private" +
-        " key that does not match the address that is referenced in txIn"
+      " key that does not match the address that is referenced in txIn"
     );
     throw Error();
   }
@@ -268,17 +284,17 @@ const updateUnspentTxOuts = (aTransactions, aUnspentTxOuts) => {
       return t.txOuts.map(
         // 트잭아웃풋들(txOuts)의 (map) 아웃풋, 인덱스를 가지고
         (txOut, index) =>
-          // 새 UTxO(미사용트랜잭션아웃풋) 만들어서
+          // 새 uTxO(미사용트랜잭션아웃풋) 만들어서
           new UnspentTxOut(t.id, index, txOut.address, txOut.amount)
       );
-    }) // reduce, concat을 통해 새 배열(UTxOs)을 만들어서 변수newUnspentTxOuts에 저장
+    }) // reduce, concat을 통해 새 배열(uTxOs)을 만들어서 변수newUnspentTxOuts에 저장
     .reduce((a, b) => a.concat(b), []);
 
   // 사용된 트잭아웃풋들 만들기
   const consumedTxOuts = aTransactions
     .map((t) => t.txIns) // 트랜잭션들의 인풋들[]을 배열로 만들고 [ [q], [w], [e] ]
     .reduce((a, b) => a.concat(b), []) // 배열껍데기 벗기고 [ q, w, e ]
-    // 새 UTxO들로 만들어주기 [ qUTxO, wUTxO, eUTxO ]
+    // 새 uTxO들로 만들어주기 [ qUTxO, wUTxO, eUTxO ]
     .map((txIn) => new UnspentTxOut(txIn.txOutId, txIn.txOutIndex, "", 0));
 
   const resultingUnspentTxOuts = aUnspentTxOuts
@@ -294,13 +310,13 @@ const updateUnspentTxOuts = (aTransactions, aUnspentTxOuts) => {
 };
 
 // 공용장부 갱신하기 (공용장부에서 거래내용(aTransactions) 정산해서)
-//                  (갱신한 공용장부 반환 / 초기, 블록추가될 때, 체인교체될 때 사용됨)
+//                 (갱신한 공용장부 반환 / 초기, 블록추가될 때, 체인교체될 때 사용됨)
 const processTransactions = (aTransactions, aUnspentTxOuts, blockIndex) => {
   // 블록의 트랜잭션들 검사하기
   if (!validateBlockTransactions(aTransactions, aUnspentTxOuts, blockIndex)) {
     return null;
   }
-  // 특정 블록에 담긴 트랜잭션들과 공용장부에 있는
+  // 특정 블록에 담긴 트랜잭션(들)과 공용장부를 가지고 갱신한 새 공용장부를 반환
   return updateUnspentTxOuts(aTransactions, aUnspentTxOuts);
 };
 

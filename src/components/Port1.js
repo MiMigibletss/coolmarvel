@@ -19,13 +19,12 @@ function Port1() {
   const [delay, setDelay] = useState(1000);
   const [isRunning, setIsRunning] = useState(false);
   const [ok, setOk] = useState(false);
-  const [writeAddress, setWriteAddress] = useState("");
-  const [sendAmount, setSendAmount] = useState("");
-  const [coinBlocks, setCoinBlocks] = useState([]);
   const [transactionPool, setTransactionPool] = useState("");
-  useInterval(() => {
+
+  // 트랜잭션이 생기면 화면에 계속 갱신시킬것
+  useEffect(() => {
     getTransactionPool();
-  }, 3000);
+  }, [transactionPool]);
 
   useInterval(
     () => {
@@ -72,21 +71,33 @@ function Port1() {
       .get(`http://localhost:3001/balance`)
       .then((res) => setBalance(res.data.balance));
   };
-  //
+
+  // 트랜잭션 만들기
   const sendTransaction = async () => {
-    await axios
-      .post(`http://localhost:3001/sendTransaction`, {
-        address: MoneyToAddress,
-        amount: Money,
-      })
-      .then((res) => console.log(res.data));
+    if (Money <= 0) {
+      alert("금액이 올바르지 않습니다.");
+    } else if (MoneyToAddress.length !== 130) {
+      alert("주소가 올바르지 않습니다.");
+    } else {
+      await axios
+        .post(`http://localhost:3001/sendTransaction`, {
+          address: MoneyToAddress,
+          amount: Money,
+        })
+        .then((res) => {
+          console.log(res.data);
+          alert("트랜잭션이 생성되었읍니다");
+        });
+    }
   };
+
   // 트랜잭션풀 불러오기
   const getTransactionPool = async () => {
     await axios
       .get(`http://localhost:3001/transactionPool`)
       .then((res) => setTransactionPool(res.data));
   };
+
   // 서버 멈춰
   const stop = async () => {
     await axios
@@ -94,18 +105,18 @@ function Port1() {
       .then((res) => alert(res.data));
   };
 
+  // 연결된 소켓들 불러오기
   const getpeers = async () => {
     axios.get(`http://localhost:3001/peers`).then((res) => setPeers(res.data));
   };
   if (peers.length === 0) {
-    return setPeers(`연결된 피어가없어요`);
+    return setPeers(`연결된 피어가 없습니다.`);
   }
 
   const addPeer = async () => {
     const P = peer;
     if (P.length === 0) {
-      //데이터없으면 리네임
-      return alert(`peer내용을 넣어주세용`);
+      return alert(`Peer Port를 입력해주세요.`);
     }
     await axios
       .post(`http://localhost:3001/addPeer`, {
@@ -122,15 +133,13 @@ function Port1() {
     }));
   };
 
-
   function handleWriteAddress(e) {
     setWriteAddress(e.target.value);
   }
+
   function handleSendAmount(e) {
     setSendAmount(e.target.value);
   }
-
-
 
   function handleDelayChange(e) {
     setDelay(Number(e.target.value));

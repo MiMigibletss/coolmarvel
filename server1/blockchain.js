@@ -6,6 +6,41 @@ const TP = require("./transactionPool");
 const { hexToBinary } = require("./util");
 const WALLET = require("./wallet");
 
+// // 블록 구조 정의
+// class Block {
+//   constructor(header, body) {
+//     this.header = header;
+//     this.body = body;
+//   }
+// }
+// // 블록.헤더 구조 정의
+// class BlockHeader {
+//   constructor(
+//     index,
+//     previousHash,
+//     timestamp,
+//     merkleRoot,
+//     difficulty,
+//     nonce,
+//     version
+//   ) {
+//     this.index = index;
+//     this.previousHash = previousHash;
+//     this.timestamp = timestamp;
+//     this.merkleRoot = merkleRoot;
+//     this.hash = hash;
+//     this.difficulty = difficulty;
+//     this.nonce = nonce;
+//     this.version = version;
+//   }
+// }
+// // 블록.바디 구조 정의
+// class BlockBody {
+//   constructor(transactions) {
+//     this.transactions = [transactions];
+//   }
+// }
+
 // 블록 구조 정의
 class Block {
   constructor(index, hash, previousHash, timestamp, data, difficulty, nonce) {
@@ -224,6 +259,7 @@ const sendTransaction = (address, amount) => {
   TP.addToTransactionPool(tx, getUnspentTxOuts());
   // 그 트랜잭션풀 방방곡곡 소문내기
   P2P.broadCastTransactionPool();
+  console.log("트랜잭션을 소문낼게요");
   return tx;
 };
 
@@ -383,7 +419,7 @@ const addBlockToChain = (newBlock) => {
   // 새 블록 검증해서 정상이면
   if (isValidNewBlock(newBlock, getLatestBlock())) {
     // (processTransactions)새 블록에 들어갈 트랜잭션들 검증하고
-    // 기존 미사용트랜잭션아웃풋목록(UTxOs/공용장부)에서 새 블록에 담긴 거래들과
+    // 기존 미사용트랜잭션아웃풋목록(uTxOs/공용장부)에서 새 블록에 담긴 거래들과
     // 현재 공용장부 정산해서 갱신한 공용장부 retVal변수에 담기
     const retVal = TX.processTransactions(
       newBlock.data,
@@ -421,7 +457,7 @@ const replaceChain = (newBlocks) => {
   if (
     validChain &&
     getAccumulatedDifficulty(newBlocks) >
-    getAccumulatedDifficulty(getBlockchain())
+      getAccumulatedDifficulty(getBlockchain())
   ) {
     console.log("전달받은 블록체인으로 교체했어요!");
     // 내 블록체인을 전달받은 블록체인으로 샤샥 교체
